@@ -123,6 +123,12 @@ In Codex, the session name set with `/rename` appears in small text just below t
 - Pressing a tile moves to that session's page in the same tab, and the `Hub ↗` button on a session page returns to the hub in the same tab.
 - Only sessions that write a state file (1.8.0 and later) are gathered. A session not updated for more than 24 hours folds into "Ended and past".
 
+#### Change the refresh interval
+
+Enter a **whole number from 1 to 600 seconds** in `Refresh interval` at the top right of the hub, then press Enter or leave the input. The default is 15 seconds. The next refresh is scheduled from when you change the value; if a request is in progress, the new interval starts after it finishes. Empty values, fractions, and values outside the range are not applied.
+
+The interval is saved for the same browser profile and hub origin and survives page reloads and browser restarts. Clearing site storage restores the default. If storage is unavailable, it applies only to the current tab and a message appears. This controls how often the hub checks the data; it does not change how often the agent produces progress data.
+
 #### Dim unused sessions
 
 Click `Dim session` on a tile or an "Ended and past" row to dim that session. Click `Restore` to return it to its original appearance. The restore button stays clearly visible.
@@ -135,7 +141,7 @@ Open the local hub in desktop Chrome, click `Enable completion alerts` at the to
 
 Sessions already completed when you first open the hub do not trigger alerts. Repeated updates and reloads in the same tab do not repeat an alert. A session that starts another task and becomes incomplete can notify again when it completes. Ending a response or a session alone does not count as task completion.
 
-Keep the hub tab open. With notifications allowed, it checks every 15 seconds while you use other tabs, although Chrome's background throttling or tab suspension can delay alerts. Use your browser's site settings to disable notifications or unblock them. Chrome's notification permission in macOS and Focus settings also apply.
+Keep the hub tab open. With notifications allowed, it checks at your chosen refresh interval (15 seconds by default) while you use other tabs, although Chrome's background throttling or tab suspension can delay alerts. Use your browser's site settings to disable notifications or unblock them. Chrome's notification permission in macOS and Focus settings also apply.
 
 ### Lane board
 
@@ -319,7 +325,7 @@ If `~/.config/deadhd/writing-rules.md` exists, page sentences follow that file's
 - **The model writes only the JSON data.** The page design is fixed in `template.html`, and `render.py` validates the data and generates the HTML. The theme and font CSS lives in `themes.css`, so the session page and the hub share the same file. A complete example of the data format is in [`skills/deadhd/example.json`](skills/deadhd/example.json).
 - **When you talk in English, the page's fixed labels are shown in English too.** This is set by the data's `lang` field; without it the page is Korean.
 - **The expected completion time is calculated from the last time the data file was modified.** So a hook re-render that leaves the data alone does not push the estimate back. An estimate that has already passed gets ` (overdue)`. The `tomorrow` or date notation is decided from the time you are viewing the page, so it changes on its own after midnight.
-- **An open tab reloads every 15 seconds.** Newly completed steps play a completion effect, and the status band refreshes on the same cycle.
+- **Session pages fetch new data every 15 seconds; the hub uses your chosen interval (15 seconds by default).** Newly completed steps play a completion effect, and the status band refreshes on the same cycle.
 - **The page is opened over a static server bound to 127.0.0.1 (`serve.py`)**, because an in-app browser such as Orca blocks `file://` navigation from inside a page. The server starts on its own the first time you open a page and stays after the session ends. It serves only `deadhd-*.html` from `/tmp`, does not follow symbolic links, and checks the `Host` header so an outside site cannot read it. To stop it, run `python3 ~/.claude/skills/deadhd/serve.py --stop` (the same path inside the plugin cache when installed as a plugin).
 - **The hub is built by reading this machine's session state files only.** `render.py` rewrites the hub file whenever a session page renders and on every hook event.
 

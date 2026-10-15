@@ -95,8 +95,9 @@ def backdate(state_dir, session, minutes, tool_seconds):
 
 
 def clocked(path):
-    # 캡처 전용 프로필에 흐린 세션을 하나 심어 되돌리기 버튼까지 예시에 드러낸다.
+    # 캡처 전용 프로필에 흐린 세션과 갱신 주기를 심어 사용자 설정을 예시에 드러낸다.
     probe = ("<script>localStorage.setItem('deadhd-hub:dimmed:demo-3', '1');"
+             "localStorage.setItem('deadhd-hub:refresh-seconds', '30');"
              "window.addEventListener('load', function () {"
              "console.log('%s' + document.documentElement.scrollHeight);});</script>" % SIZE_MARK)
     with open(path, encoding='utf-8') as f:

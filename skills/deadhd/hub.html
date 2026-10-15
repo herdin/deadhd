@@ -44,12 +44,18 @@ body {
 /* ---------- 머리말 ---------- */
 main { position: relative; z-index: 1; max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
 .hub-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.hub-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.refresh-control { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; }
+.refresh-control input {
+  width: 72px; padding: 6px; border: 1px solid var(--card-line); border-radius: 8px;
+  background: var(--card); color: var(--ink); font: inherit;
+}
 .notification-button, .session-dim {
   padding: 6px 10px; border: 1px solid var(--card-line); border-radius: 8px;
   background: var(--card); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer;
 }
 .notification-button:disabled { opacity: .65; cursor: default; }
-.notification-button:focus-visible, .session-dim:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
+.notification-button:focus-visible, .session-dim:focus-visible, .refresh-control input:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
 .session-dim { white-space: nowrap; }
 .eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
@@ -185,7 +191,14 @@ details summary {
 <main>
   <div class="hub-top">
     <span class="eyebrow"><span class="dot"></span><span id="eyebrowText"></span></span>
-    <button type="button" class="notification-button" id="notifications"></button>
+    <div class="hub-controls">
+      <label class="refresh-control">
+        <span id="refreshLabel"></span>
+        <input id="refreshInterval" type="number" min="1" max="600" step="1" value="15" required>
+        <span id="refreshUnit"></span>
+      </label>
+      <button type="button" class="notification-button" id="notifications"></button>
+    </div>
   </div>
   <h1 id="h1"></h1>
   <div class="hub-sub" id="sub"></div>
@@ -227,7 +240,11 @@ details summary {
       eyebrow: 'deadhd 허브',
       count: (n, m) => '세션 ' + n + ' · 나를 기다리는 세션 ' + m,
       updated: t => '마지막 갱신 ' + t,
-      refreshed: '15초마다 새로 고침',
+      refreshed: n => n + '초마다 새로 고침',
+      refreshLabel: '갱신 주기',
+      refreshUnit: '초',
+      refreshRange: '1~600초 사이의 정수를 입력하세요.',
+      refreshSaveFail: '갱신 주기는 이 탭에 적용했지만 저장하지 못했어요. 브라우저의 사이트 저장소 설정을 확인해 주세요.',
       loadFail: '데이터를 읽지 못했어요',
       refreshFail: d => '최신 상태를 불러오지 못하고 있어요 · ' + d,
       notificationsEnable: '완료 알림 켜기',
@@ -294,7 +311,11 @@ details summary {
       eyebrow: 'deadhd hub',
       count: (n, m) => n + (n === 1 ? ' session' : ' sessions') + ' · ' + m + ' waiting for you',
       updated: t => 'Updated ' + t,
-      refreshed: 'refreshes every 15s',
+      refreshed: n => 'refreshes every ' + n + 's',
+      refreshLabel: 'Refresh interval',
+      refreshUnit: 'seconds',
+      refreshRange: 'Enter a whole number from 1 to 600 seconds.',
+      refreshSaveFail: 'The interval applies to this tab but could not be saved. Check your browser\'s site storage settings.',
       loadFail: 'Could not read the data',
       refreshFail: d => 'Could not fetch the latest state · ' + d,
       notificationsEnable: 'Enable completion alerts',
@@ -365,7 +386,14 @@ details summary {
   // 태그 글자를 나눠 적는다. 이어 적으면 HTML 파서가 스크립트 안의 태그로 읽을 수 있고, 이 파일에 데이터 태그가 둘 있는 것처럼 보인다.
   const DATA_RE = new RegExp('<scr' + 'ipt id="hub-data"[^>]*>([\\s\\S]*?)</scr' + 'ipt>');
   const CODE_RE = new RegExp('<scr' + 'ipt>([\\s\\S]*?)</scr' + 'ipt>');
-  const REFRESH_MS = 15000;
+  const REFRESH_KEY = 'deadhd-hub:refresh-seconds';
+  let refreshSeconds = 15;
+  try {
+    const saved = Number(localStorage.getItem(REFRESH_KEY));
+    if (Number.isInteger(saved) && saved >= 1 && saved <= 600) refreshSeconds = saved;
+  } catch (err) { /* 저장소를 읽지 못하면 기본 15초를 쓴다 */ }
+  const refreshInput = $('refreshInterval');
+  refreshInput.value = String(refreshSeconds);
   const ownCode = document.currentScript ? document.currentScript.textContent : null;
   const docLang = document.documentElement ? document.documentElement.lang : '';
 
@@ -531,7 +559,7 @@ details summary {
     return s < 60 ? L.sec(s) : fmtDur(s / 60);
   };
 
-  // 받은 데이터로 화면 전체를 다시 그린다. 처음 로드와 15초마다의 갱신이 같은 길을 지난다.
+  // 받은 데이터로 화면 전체를 다시 그린다. 처음 로드와 설정한 주기마다의 갱신이 같은 길을 지난다.
   function render(next) {
   data = next;
   L = I18N[data.lang] || I18N.ko;
@@ -541,6 +569,9 @@ details summary {
   sessions = Array.isArray(data.sessions) ? data.sessions : [];
   renderedAt = data.renderedAt ? toDate(data.renderedAt) : null;
   updateNotificationButton();
+  $('refreshLabel').textContent = L.refreshLabel;
+  $('refreshUnit').textContent = L.refreshUnit;
+  refreshInput.title = L.refreshRange;
   notifyCompletions();
 
   const groups = { wait: [], stall: [], idle: [], working: [], untracked: [], done: [], ended: [], stale: [] };
@@ -554,7 +585,7 @@ details summary {
 
   const parts = [];
   if (renderedAt) parts.push(L.updated(fmtClock(renderedAt, viewNow)));
-  parts.push(L.refreshed);
+  parts.push(L.refreshed(refreshSeconds));
   [['wait', L.bucketWait], ['stall', L.bucketStall], ['idle', L.bucketIdle],
    ['working', L.bucketWorking], ['untracked', L.bucketUntracked], ['done', L.bucketDone],
    ['ended', L.bucketEnded], ['stale', L.bucketStale]].forEach(([k, label]) => {
@@ -738,7 +769,16 @@ details summary {
     : loc.protocol === 'file:' ? 'reload' : 'static';
   let lastOkAt = Date.now();
   let timer = null, inflight = false;
-  const schedule = () => { timer = setTimeout(() => { timer = null; tick(); }, REFRESH_MS); };
+  const schedule = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (refreshMode === 'static' || inflight) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (refreshMode === 'reload') loc.reload();
+      else tick();
+    }, refreshSeconds * 1000);
+  };
   const applyPage = html => {
     const block = DATA_RE.exec(html);
     if (!block) throw new Error('데이터 블록이 없다');
@@ -764,13 +804,19 @@ details summary {
       })
       .then(() => { inflight = false; schedule(); });
   };
-  if (refreshMode === 'fetch') {
+  refreshInput.addEventListener('change', () => {
+    if (!refreshInput.reportValidity()) return;
+    refreshSeconds = Number(refreshInput.value);
+    try { localStorage.setItem(REFRESH_KEY, String(refreshSeconds)); }
+    catch (err) { showNotice(L.refreshSaveFail); }
+    if (data) render(data);
     schedule();
+  });
+  schedule();
+  if (refreshMode === 'fetch') {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && !timer && !inflight) tick();
     });
-  } else if (refreshMode === 'reload') {
-    setTimeout(() => loc.reload(), REFRESH_MS);
   }
 })();
 </script>
