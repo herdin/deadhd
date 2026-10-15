@@ -3231,7 +3231,7 @@ class HubTest(unittest.TestCase):
             f.write(text)
 
     def run_hub(self, **kwargs):
-        extra = {'DEADHD_NOW': FIXED_NOW}
+        extra = {'DEADHD_NOW': FIXED_NOW, 'CODEX_HOME': self.tmp}
         extra.update(kwargs.pop('env_extra', {}) or {})
         return run_hub(self.state_dir, self.hub, env_extra=extra, **kwargs)
 
@@ -3244,6 +3244,41 @@ class HubTest(unittest.TestCase):
 
     def sessions(self, **kwargs):
         return parse_block(hub_data_block(self.page(**kwargs)))['sessions']
+
+    def test_codex_name_uses_latest_valid_index_entry(self):
+        self.write_state('a', 'idle', FIXED_NOW, FIXED_NOW)
+        self.write_state('b', 'idle', FIXED_NOW, FIXED_NOW)
+        path = os.path.join(self.tmp, 'session_index.jsonl')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(json.dumps({'id': 'a', 'thread_name': 'old'}) + '\n{broken\n')
+            for entry in ([], {'id': [], 'thread_name': 'invalid'},
+                          {'id': 'b', 'thread_name': 7}, {'id': 'b', 'thread_name': '  '},
+                          {'id': 'a', 'thread_name': '  renamed - 세션  '}):
+                f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        sessions = {s['sessionId']: s for s in self.sessions()}
+        self.assertEqual(sessions['a']['sessionName'], 'renamed - 세션')
+        self.assertEqual(sessions['a']['summary']['title'], 'a 제목')
+        self.assertIsNone(sessions['b']['sessionName'])
+
+    def test_codex_rename_is_read_again_on_next_hub_render(self):
+        self.write_state('a', 'idle', FIXED_NOW, FIXED_NOW)
+        path = os.path.join(self.tmp, 'session_index.jsonl')
+        for name in ('original', 'renamed'):
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps({'id': 'a', 'thread_name': name}) + '\n')
+            self.assertEqual(self.sessions()[0]['sessionName'], name)
+
+    def test_missing_or_unreadable_codex_index_keeps_the_hub(self):
+        self.write_state('a', 'idle', FIXED_NOW, FIXED_NOW)
+        self.assertIsNone(self.sessions()[0]['sessionName'])
+        os.mkdir(os.path.join(self.tmp, 'session_index.jsonl'))
+        self.assertIsNone(self.sessions()[0]['sessionName'])
+
+    def test_invalid_utf8_codex_index_keeps_the_hub(self):
+        self.write_state('a', 'idle', FIXED_NOW, FIXED_NOW)
+        with open(os.path.join(self.tmp, 'session_index.jsonl'), 'wb') as f:
+            f.write(b'\xff\n')
+        self.assertIsNone(self.sessions()[0]['sessionName'])
 
     def test_sessions_are_bucketed_and_sorted(self):
         self.write_state('a', 'idle', '2026-10-03T09:50:00+09:00', FIXED_NOW)
@@ -3414,7 +3449,7 @@ class HubPageTest(unittest.TestCase):
 
     def harness(self, theme=None, font=None, storage=None, focusin=None):
         r = run_hub(self.state_dir, self.hub, theme=theme, font=font,
-                    env_extra={'DEADHD_NOW': FIXED_NOW})
+                    env_extra={'DEADHD_NOW': FIXED_NOW, 'CODEX_HOME': self.tmp})
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(self.hub, encoding='utf-8') as f:
             return run_hub_harness(f.read(), fixed_now=FIXED_NOW, storage=storage, focusin=focusin)
@@ -3427,6 +3462,26 @@ class HubPageTest(unittest.TestCase):
 
     def texts(self, node, cls):
         return [n['text'] for n in iter_nodes(node) if cls in (n.get('cls') or '').split()]
+
+    def test_codex_session_name_is_plain_text_beside_tile_and_ended_titles(self):
+        self.write_state('w', 'working', FIXED_NOW, '작업 요약')
+        self.write_state('e', 'ended', FIXED_NOW, '종료 요약')
+        name = '<img src=x onerror=alert(1)> - 세션'
+        with open(os.path.join(self.tmp, 'session_index.jsonl'), 'w', encoding='utf-8') as f:
+            for session in ('w', 'e'):
+                f.write(json.dumps({'id': session, 'thread_name': name}) + '\n')
+        nodes = self.dom()
+        tile = self.tiles(nodes, 'workGrid')[0]
+        self.assertEqual(self.texts(tile, 'tile-title'), ['작업 요약'])
+        self.assertEqual(self.texts(tile, 'session-name'), [name])
+        self.assertEqual(self.texts(nodes['endedList'], 'e-title'), ['종료 요약'])
+        self.assertEqual(self.texts(nodes['endedList'], 'session-name'), [name])
+
+    def test_unnamed_session_has_no_extra_label(self):
+        self.write_state('w', 'working', FIXED_NOW, '작업 요약')
+        tile = self.tiles(self.dom(), 'workGrid')[0]
+        self.assertEqual(self.texts(tile, 'tile-title'), ['작업 요약'])
+        self.assertEqual(self.texts(tile, 'session-name'), [])
 
     def test_tile_without_a_page_names_the_view_and_has_no_link(self):
         self.write_state('w', 'waiting_permission', '2026-10-03T09:48:00+09:00', '밴드 세션',

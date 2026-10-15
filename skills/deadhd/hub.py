@@ -78,12 +78,34 @@ def order_key(session):
     return (BUCKET_RANK[session['bucket']], since is None, since or EPOCH, session['sessionId'])
 
 
+def codex_session_names():
+    root = os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex')
+    names = {}
+    # shortcut: Codex 의 이름 인덱스 형식에 의존하며, 형식이 바뀌면 thread/read API 로 전환한다.
+    try:
+        with open(os.path.join(root, 'session_index.jsonl'), encoding='utf-8') as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                session_id, name = entry.get('id'), entry.get('thread_name')
+                if state.valid_session_id(session_id) and isinstance(name, str) and name.strip():
+                    names[session_id] = name.strip()
+    except (OSError, UnicodeError):
+        pass
+    return names
+
+
 def collect(state_dir):
     try:
         names = os.listdir(state_dir)
     except OSError:
         return []
     sessions = []
+    session_names = codex_session_names()
     for name in sorted(names):
         if not name.endswith('.json'):
             continue
@@ -105,8 +127,10 @@ def collect(state_dir):
         tasks = data.get('backgroundTasks')
         compactions = data.get('compactions')
         tool = data.get('lastTool')
+        session_id = data.get('sessionId') if isinstance(data.get('sessionId'), str) else name[:-5]
         sessions.append({
-            'sessionId': data.get('sessionId') if isinstance(data.get('sessionId'), str) else name[:-5],
+            'sessionId': session_id,
+            'sessionName': session_names.get(session_id),
             'out': out,
             'href': href,
             'view': view,

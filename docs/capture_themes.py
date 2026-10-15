@@ -102,8 +102,10 @@ def render_panel(case, theme, work_dir, demos_dir, session=None, now=None, extra
     # 덮지 않도록 작업 디렉터리 안 경로를 주고, 세션 id 는 상속하지 않는다.
     env = dict(os.environ, DEADHD_NOW=fixed, TZ='Asia/Seoul',
                DEADHD_HUB=os.path.join(work_dir, 'hub.html'),
-               DEADHD_STATE_DIR=os.path.join(work_dir, 'state'))
+               DEADHD_STATE_DIR=os.path.join(work_dir, 'state'),
+               CODEX_HOME=os.path.join(work_dir, 'codex'))
     env.pop('CLAUDE_CODE_SESSION_ID', None)
+    env.pop('CODEX_THREAD_ID', None)
     if extra_env:
         env.update(extra_env)
     cmd = [sys.executable, RENDER, '--theme', theme]

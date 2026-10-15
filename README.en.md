@@ -115,6 +115,8 @@ Picking a compact view shows the `Auto`, `Landscape`, and `Portrait` buttons. `A
 
 One page that gathers the sessions running on this machine. Open it with `/deadhd hub`, or with the `Hub ↗` button at the top right of a session page. A tile carries the status badge, the title and key, a per-step mini strip, `6/12 done`, what is running now, and the completion estimate.
 
+In Codex, the session name set with `/rename` appears in small text just below the task summary title, including in ended and past sessions. Sessions without a name omit this label. Renames appear the next time the hub is generated or rendered; run `$deadhd hub` again to see a rename immediately. Names come from `~/.codex/session_index.jsonl`, or the same index under `CODEX_HOME` when set.
+
 <p align="center"><img src="docs/hub.en.png" alt="The hub gathering session tiles in state order" width="800"></p>
 
 - Sorted permission > no signal > input > working > no hooks > done > ended > past sessions, and within a state the session that has waited longest comes first.

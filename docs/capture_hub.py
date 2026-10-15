@@ -56,8 +56,10 @@ def work_env(work):
     env = dict(os.environ, TZ='Asia/Seoul', DEADHD_NOW=NOW,
                DEADHD_STATE_DIR=os.path.join(work, 'state'),
                DEADHD_HUB=os.path.join(work, 'hub.html'),
-               DEADHD_HISTORY=os.path.join(work, 'history.jsonl'))
+               DEADHD_HISTORY=os.path.join(work, 'history.jsonl'),
+               CODEX_HOME=os.path.join(work, 'codex'))
     env.pop('CLAUDE_CODE_SESSION_ID', None)
+    env.pop('CODEX_THREAD_ID', None)
     return env
 
 
@@ -165,6 +167,10 @@ def main(argv):
             for row in HISTORY_ROWS:
                 f.write(json.dumps(row) + '\n')
         env = work_env(work)
+        os.makedirs(env['CODEX_HOME'])
+        with open(os.path.join(env['CODEX_HOME'], 'session_index.jsonl'), 'w', encoding='utf-8') as f:
+            for session, case, _, _, _ in SESSIONS:
+                f.write(json.dumps({'id': session, 'thread_name': 'codex - ' + case}) + '\n')
         # 이 컴퓨터의 설정이 band·statusline 이면 render.py 가 HTML 페이지를 쓰지 않아 캡처할 것이 없다.
         # 세션마다 view 를 못박은 설정을 줘서 찍는 사람의 설정과 무관하게 같은 그림이 나오게 한다.
         html_config = os.path.join(work, 'html-config.json')
