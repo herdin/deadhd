@@ -208,14 +208,27 @@ cp -r deadhd/skills/deadhd ~/.claude/skills/
 
 ### Codex 에서 설치
 
-Codex CLI `0.159.2` 기준으로 확인했습니다. 수정된 저장소의 로컬 경로를 등록하고 플러그인을 설치합니다.
+Codex CLI `0.159.2` 기준으로 확인했습니다. 위의 `/plugin` 명령은 Claude Code 용입니다. Codex 에서는 아래 명령을 **터미널에서** 실행합니다.
+
+#### 로컬 저장소에서 설치
+
+Codex 지원 변경이 포함된 브랜치를 checkout 한 로컬 저장소를 사용합니다. `/absolute/path/to/deadhd` 를 실제 저장소 경로로 바꿉니다.
 
 ```bash
-codex plugin marketplace add /absolute/path/to/deadhd
+cd /absolute/path/to/deadhd
+codex plugin marketplace add .
 codex plugin add deadhd@deadhd
 ```
 
-새 Codex 세션을 열고 `/hooks` 에서 deadhd 의 hook 내용을 검토하고 신뢰합니다. 각 작업 세션에서 `$deadhd` 를 실행하면 해당 세션의 진행 페이지가 등록됩니다. `$deadhd hub` 로 등록된 세션들을 한 화면에서 봅니다. 실행 중인 모든 Codex 세션을 자동으로 가져오지는 않습니다.
+`.` 은 `.claude-plugin/marketplace.json` 과 `.codex-plugin/plugin.json` 이 있는 저장소 루트입니다. GitHub 에 push 하지 않은 로컬 변경도 설치할 수 있습니다.
+
+설치 후 Codex 안에서 다음 순서로 실행합니다.
+
+1. 새 Codex 세션을 열고 `/hooks` 에서 deadhd 의 hook 내용을 검토하고 신뢰합니다.
+2. 각 작업 세션에서 `$deadhd` 를 실행해 해당 세션의 진행 페이지를 등록합니다.
+3. `$deadhd hub` 로 등록된 세션들을 한 화면에서 봅니다.
+
+실행 중인 모든 Codex 세션을 자동으로 가져오지는 않습니다. 로컬 플러그인도 캐시 사본으로 설치되므로 소스 수정이 자동 반영되지 않습니다. 변경을 반영하려면 플러그인을 재설치하고 새 Codex 세션을 시작합니다. Hook 이 바뀌었다면 `/hooks` 에서 다시 검토하고 신뢰합니다.
 
 | 기능 | Codex 지원 |
 |---|---|
