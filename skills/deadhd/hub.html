@@ -43,6 +43,13 @@ body {
 
 /* ---------- 머리말 ---------- */
 main { position: relative; z-index: 1; max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+.hub-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.notification-button {
+  padding: 6px 10px; border: 1px solid var(--card-line); border-radius: 8px;
+  background: var(--card); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer;
+}
+.notification-button:disabled { opacity: .65; cursor: default; }
+.notification-button:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
 .eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 500; color: var(--now);
@@ -170,7 +177,10 @@ details summary {
 <p class="notice" id="notice" hidden role="status"></p>
 
 <main>
-  <span class="eyebrow"><span class="dot"></span><span id="eyebrowText"></span></span>
+  <div class="hub-top">
+    <span class="eyebrow"><span class="dot"></span><span id="eyebrowText"></span></span>
+    <button type="button" class="notification-button" id="notifications"></button>
+  </div>
   <h1 id="h1"></h1>
   <div class="hub-sub" id="sub"></div>
   <div class="hub-legend" id="legend" hidden></div>
@@ -214,6 +224,13 @@ details summary {
       refreshed: '15초마다 새로 고침',
       loadFail: '데이터를 읽지 못했어요',
       refreshFail: d => '최신 상태를 불러오지 못하고 있어요 · ' + d,
+      notificationsEnable: '완료 알림 켜기',
+      notificationsOn: '완료 알림 켜짐',
+      notificationsDenied: '완료 알림 차단됨',
+      notificationsUnsupported: '완료 알림 미지원',
+      notificationsSettings: '브라우저의 사이트 설정에서 알림 권한을 변경할 수 있습니다.',
+      notificationsError: '알림 권한을 요청하지 못했어요. 브라우저의 사이트 설정을 확인해 주세요.',
+      notificationDone: 'deadhd · 작업 완료',
       secWaiting: '나를 기다리는 세션',
       secWorking: '작업 중',
       secDone: '완료된 세션',
@@ -271,6 +288,13 @@ details summary {
       refreshed: 'refreshes every 15s',
       loadFail: 'Could not read the data',
       refreshFail: d => 'Could not fetch the latest state · ' + d,
+      notificationsEnable: 'Enable completion alerts',
+      notificationsOn: 'Completion alerts on',
+      notificationsDenied: 'Completion alerts blocked',
+      notificationsUnsupported: 'Completion alerts unavailable',
+      notificationsSettings: 'You can change notification permission in your browser\'s site settings.',
+      notificationsError: 'Could not request notification permission. Check your browser\'s site settings.',
+      notificationDone: 'deadhd · Task completed',
       secWaiting: 'Waiting for you',
       secWorking: 'Working',
       secDone: 'Completed',
@@ -382,6 +406,65 @@ details summary {
   let data = null, L = I18N[docLang] || I18N.ko;
   let sessions = [], viewNow = new Date(), renderedAt = null;
 
+  const COMPLETION_KEY = 'deadhd-hub:completed';
+  let completed = store.get(COMPLETION_KEY) || Object.create(null);
+  const notificationsAllowed = () => typeof Notification === 'function' && Notification.permission === 'granted';
+  const notificationButton = $('notifications');
+  function updateNotificationButton() {
+    const permission = typeof Notification === 'function' ? Notification.permission : 'unsupported';
+    notificationButton.disabled = permission !== 'default';
+    notificationButton.textContent = permission === 'granted' ? L.notificationsOn
+      : permission === 'denied' ? L.notificationsDenied
+      : permission === 'unsupported' ? L.notificationsUnsupported : L.notificationsEnable;
+    notificationButton.title = L.notificationsSettings;
+  }
+  notificationButton.addEventListener('click', async () => {
+    if (typeof Notification !== 'function') return;
+    notificationButton.disabled = true;
+    try {
+      await Notification.requestPermission();
+    } catch (err) {
+      console.error('hub: 알림 권한을 요청하지 못했다', err);
+      showNotice(L.notificationsError);
+    }
+    updateNotificationButton();
+  });
+
+  function notifyCompletions() {
+    const next = Object.create(null), newlyDone = [];
+    sessions.forEach(session => {
+      const id = session.sessionId;
+      if (typeof id !== 'string') return;
+      const done = (session.summary || {}).allDone === true;
+      if (completed[id] === false && done) newlyDone.push(session);
+      next[id] = done;
+    });
+    completed = next;
+    store.set(COMPLETION_KEY, next);
+    if (!notificationsAllowed()) return;
+    newlyDone.forEach(session => {
+      const summary = session.summary || {};
+      try {
+        const notification = new Notification(L.notificationDone, {
+          body: [session.sessionName, summary.title].filter(Boolean).join('\n'),
+          tag: 'deadhd-done:' + session.sessionId + ':' + (summary.dataAt || summary.renderedAt || '')
+        });
+        notification.onclick = () => {
+          notification.close();
+          window.focus();
+          if (session.href) {
+            try {
+              const href = new URL(session.href, location.href);
+              if (href.origin === location.origin && /^https?:$/.test(href.protocol)) location.href = href.href;
+            } catch (err) { /* 잘못된 링크는 무시하고 허브에 포커스를 둔다. */ }
+          }
+        };
+      } catch (err) {
+        console.error('hub: 완료 알림을 표시하지 못했다', err);
+      }
+    });
+  }
+
   // 표기는 보는 시점의 브라우저 로컬 날짜를 기준으로 정한다 (렌더 시점이 아니다).
   function fmtClock(target, now) {
     const t = toDate(target), v = toDate(now);
@@ -416,6 +499,8 @@ details summary {
 
   sessions = Array.isArray(data.sessions) ? data.sessions : [];
   renderedAt = data.renderedAt ? toDate(data.renderedAt) : null;
+  updateNotificationButton();
+  notifyCompletions();
 
   const groups = { wait: [], stall: [], idle: [], working: [], untracked: [], done: [], ended: [], stale: [] };
   sessions.forEach(s => { if (groups[s.bucket]) groups[s.bucket].push(s); });
@@ -618,8 +703,8 @@ details summary {
     return true;
   };
   const tick = () => {
-    // 안 보이는 탭은 받지 않는다. 보이게 되면 visibilitychange 가 바로 부른다.
-    if (document.hidden) return;
+    // shortcut: 브라우저가 탭을 절전·종료하면 감지가 멈춘다. 상시 알림이 필요하면 서버 알림으로 옮긴다.
+    if (document.hidden && !notificationsAllowed()) return;
     inflight = true;
     fetch(loc.href.split('#')[0], { cache: 'no-store', credentials: 'same-origin' })
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })

@@ -123,6 +123,14 @@ In Codex, the session name set with `/rename` appears in small text just below t
 - Pressing a tile moves to that session's page in the same tab, and the `Hub ↗` button on a session page returns to the hub in the same tab.
 - Only sessions that write a state file (1.8.0 and later) are gathered. A session not updated for more than 24 hours folds into "Ended and past".
 
+#### Browser completion alerts
+
+Open the local hub in desktop Chrome, click `Enable completion alerts` at the top right, and allow notifications. When a session observed by the hub changes from an incomplete checklist to all steps completed, a browser notification shows its session name and summary title. Clicking it opens that session's progress page.
+
+Sessions already completed when you first open the hub do not trigger alerts. Repeated updates and reloads in the same tab do not repeat an alert. A session that starts another task and becomes incomplete can notify again when it completes. Ending a response or a session alone does not count as task completion.
+
+Keep the hub tab open. With notifications allowed, it checks every 15 seconds while you use other tabs, although Chrome's background throttling or tab suspension can delay alerts. Use your browser's site settings to disable notifications or unblock them. Chrome's notification permission in macOS and Focus settings also apply.
+
 ### Lane board
 
 When four or more work units run in parallel, such as the subtasks of an epic, filling the data's `board` adds a task × stage table below the page. Each lane shows its stage, worker, last signal, time left, and ticket transitions on one row, with a summary of how many are done, running, stalled, blocked, waiting, or left.
