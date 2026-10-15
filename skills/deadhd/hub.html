@@ -44,12 +44,13 @@ body {
 /* ---------- 머리말 ---------- */
 main { position: relative; z-index: 1; max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
 .hub-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.notification-button {
+.notification-button, .session-dim {
   padding: 6px 10px; border: 1px solid var(--card-line); border-radius: 8px;
   background: var(--card); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer;
 }
 .notification-button:disabled { opacity: .65; cursor: default; }
-.notification-button:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
+.notification-button:focus-visible, .session-dim:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
+.session-dim { white-space: nowrap; }
 .eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 500; color: var(--now);
@@ -76,8 +77,11 @@ h1 {
 @media (min-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---------- 타일 ---------- */
+.session-card { position: relative; display: grid; min-width: 0; }
+.session-card > .session-dim { position: absolute; right: 16px; bottom: 12px; }
+.session-card.is-dimmed > .tile { opacity: .4; box-shadow: none; }
 .tile {
-  display: block; padding: 14px 16px; border-radius: 16px;
+  display: block; padding: 14px 16px 52px; border-radius: 16px;
   background: var(--card); border: 1px solid var(--card-line);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   color: inherit; text-decoration: none;
@@ -157,7 +161,9 @@ details summary {
   font-size: 17px; color: var(--ink-2); cursor: pointer;
 }
 .ended-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
-.ended-list li { display: flex; gap: 10px; align-items: baseline; padding: 6px 2px; border-top: 1px solid var(--card-line); font-size: 12.5px; color: var(--ink-3); }
+.ended-list li { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 6px 2px; border-top: 1px solid var(--card-line); font-size: 12.5px; color: var(--ink-3); }
+.ended-list li.is-dimmed > :not(button) { opacity: .4; }
+.ended-list .session-dim { margin-left: auto; }
 .ended-list .e-title { color: var(--ink-2); }
 .ended-list .e-key { font-family: var(--f-mono); font-size: 11px; }
 .ended-list .e-upd { margin-left: auto; font-family: var(--f-mono); font-size: 11px; white-space: nowrap; }
@@ -231,6 +237,9 @@ details summary {
       notificationsSettings: '브라우저의 사이트 설정에서 알림 권한을 변경할 수 있습니다.',
       notificationsError: '알림 권한을 요청하지 못했어요. 브라우저의 사이트 설정을 확인해 주세요.',
       notificationDone: 'deadhd · 작업 완료',
+      dimSession: '흐리게 표시',
+      restoreSession: '되돌리기',
+      dimSaveFail: '흐림 설정을 저장하지 못했어요. 브라우저의 사이트 저장소 설정을 확인해 주세요.',
       secWaiting: '나를 기다리는 세션',
       secWorking: '작업 중',
       secDone: '완료된 세션',
@@ -295,6 +304,9 @@ details summary {
       notificationsSettings: 'You can change notification permission in your browser\'s site settings.',
       notificationsError: 'Could not request notification permission. Check your browser\'s site settings.',
       notificationDone: 'deadhd · Task completed',
+      dimSession: 'Dim session',
+      restoreSession: 'Restore',
+      dimSaveFail: 'Could not save the dim setting. Check your browser\'s site storage settings.',
       secWaiting: 'Waiting for you',
       secWorking: 'Working',
       secDone: 'Completed',
@@ -405,6 +417,35 @@ details summary {
   // 렌더마다 다시 정해지는 값. render() 와 갱신 루프가 같이 본다.
   let data = null, L = I18N[docLang] || I18N.ko;
   let sessions = [], viewNow = new Date(), renderedAt = null;
+
+  const DIM_PREFIX = 'deadhd-hub:dimmed:';
+  function isDimmed(session) {
+    try { return localStorage.getItem(DIM_PREFIX + session.sessionId) === '1'; }
+    catch (err) { return false; }
+  }
+  function dimButton(session, dimmed) {
+    const label = dimmed ? L.restoreSession : L.dimSession;
+    const button = el('button', 'session-dim', label);
+    button.type = 'button';
+    button.dataset.focusKey = 'dim:' + session.sessionId;
+    button.setAttribute('aria-label', label + ' · ' + (session.sessionName || (session.summary || {}).title || session.sessionId));
+    button.addEventListener('click', () => {
+      try {
+        if (dimmed) localStorage.removeItem(DIM_PREFIX + session.sessionId);
+        else localStorage.setItem(DIM_PREFIX + session.sessionId, '1');
+      } catch (err) {
+        showNotice(L.dimSaveFail);
+        return;
+      }
+      render(data);
+    });
+    return button;
+  }
+  if (typeof window === 'object' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', e => {
+      if (data && (e.key === null || e.key.startsWith(DIM_PREFIX))) render(data);
+    });
+  }
 
   const COMPLETION_KEY = 'deadhd-hub:completed';
   let completed = store.get(COMPLETION_KEY) || Object.create(null);
@@ -555,6 +596,8 @@ details summary {
 
   function tile(session) {
     const sum = session.summary || {};
+    const dimmed = isDimmed(session);
+    const card = el('div', 'session-card' + (dimmed ? ' is-dimmed' : ''));
     const a = el('a', 'tile tile-' + session.bucket);
     if (session.href) a.href = session.href;
     a.dataset.focusKey = 'tile:' + session.sessionId;
@@ -620,18 +663,22 @@ details summary {
     const tasks = Array.isArray(session.backgroundTasks) ? session.backgroundTasks : [];
     if (tasks.length) line.push(L.liveBackground(tasks.length));
     if (line.length) a.appendChild(el('div', 'tile-sub mono', line.join(' · ')));
-    return a;
+    card.appendChild(a);
+    card.appendChild(dimButton(session, dimmed));
+    return card;
   }
 
   function endedRow(session) {
     const sum = session.summary || {};
-    const li = el('li');
+    const dimmed = isDimmed(session);
+    const li = el('li', dimmed ? 'is-dimmed' : null);
     li.appendChild(el('span', 'e-title', sum.title == null ? '' : String(sum.title)));
     if (typeof session.sessionName === 'string' && session.sessionName) {
       li.appendChild(el('small', 'session-name mono', session.sessionName));
     }
     if (sum.key) li.appendChild(el('span', 'e-key mono', sum.key));
     if (session.updatedAt) li.appendChild(el('span', 'e-upd', fmtClock(toDate(session.updatedAt), viewNow)));
+    li.appendChild(dimButton(session, dimmed));
     return li;
   }
 

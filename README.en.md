@@ -123,6 +123,12 @@ In Codex, the session name set with `/rename` appears in small text just below t
 - Pressing a tile moves to that session's page in the same tab, and the `Hub ↗` button on a session page returns to the hub in the same tab.
 - Only sessions that write a state file (1.8.0 and later) are gathered. A session not updated for more than 24 hours folds into "Ended and past".
 
+#### Dim unused sessions
+
+Click `Dim session` on a tile or an "Ended and past" row to dim that session. Click `Restore` to return it to its original appearance. The restore button stays clearly visible.
+
+Settings are saved per session ID in the browser's `localStorage` and survive automatic updates, page reloads, browser restarts, and session status changes. Other hub tabs in the same browser profile and at the same origin also update. Clearing site storage resets the settings; different browsers, profiles, hosts, or ports do not share them. If storage is unavailable, the change is not applied and a message appears.
+
 #### Browser completion alerts
 
 Open the local hub in desktop Chrome, click `Enable completion alerts` at the top right, and allow notifications. When a session observed by the hub changes from an incomplete checklist to all steps completed, a browser notification shows its session name and summary title. Clicking it opens that session's progress page.

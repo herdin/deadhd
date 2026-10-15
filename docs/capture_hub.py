@@ -95,7 +95,9 @@ def backdate(state_dir, session, minutes, tool_seconds):
 
 
 def clocked(path):
-    probe = ("<script>window.addEventListener('load', function () {"
+    # 캡처 전용 프로필에 흐린 세션을 하나 심어 되돌리기 버튼까지 예시에 드러낸다.
+    probe = ("<script>localStorage.setItem('deadhd-hub:dimmed:demo-3', '1');"
+             "window.addEventListener('load', function () {"
              "console.log('%s' + document.documentElement.scrollHeight);});</script>" % SIZE_MARK)
     with open(path, encoding='utf-8') as f:
         page = f.read()
