@@ -179,7 +179,7 @@ A preset bundles the family, weight, and letter spacing, and the default `defaul
 
 ## Installation
 
-All you need is [Claude Code](https://code.claude.com) and `python3` (standard library only). Use only one of the three methods.
+You need [Claude Code](https://code.claude.com) or a Codex CLI with lifecycle hooks, and `python3` (standard library only). For Codex, follow [Install in Codex](#install-in-codex) below. For Claude Code, use only one of the three methods.
 
 | Method | Invocation name | Status band hooks |
 |---|---|---|
@@ -205,6 +205,31 @@ Because `skills/deadhd/.claude-plugin/` is copied along, the folder is auto-load
 
 > [!WARNING]
 > Do not use the plugin install and the skill folder install together. With both in place the `deadhd` plugin is loaded twice: the same commands, the same state key, and two timers over one state file.
+
+### Install in Codex
+
+Checked with Codex CLI `0.159.2`. Register the modified local repository and install the plugin:
+
+```bash
+codex plugin marketplace add /absolute/path/to/deadhd
+codex plugin add deadhd@deadhd
+```
+
+Start a new Codex session, then review and trust the deadhd hooks with `/hooks`. Run `$deadhd` in each task session to register its progress page, then `$deadhd hub` to see those sessions together. Running Codex sessions are not automatically imported.
+
+| Feature | Codex support |
+|---|---|
+| HTML progress pages, themes, session hub | Supported |
+| Working, permission waiting, idle, last tool, compaction, session end | Updated by trusted plugin hooks |
+| Turn interruption | Returns to idle |
+| Terminal `band`, `statusline`, Claude mod | Unavailable; always uses HTML regardless of saved preferences |
+| Claude background task list | Unavailable; Codex hooks do not provide that field |
+
+`.codex-plugin/plugin.json` selects `hooks/codex.json`, so Codex does not load Claude's `Notification` hook or TypeScript mod. `render.py` uses `CODEX_THREAD_ID` to separate session state (`--session` takes priority, and an existing `CLAUDE_CODE_SESSION_ID` keeps its Claude behavior). Data and HTML paths must also differ between sessions; the skill instructs Codex to include the thread ID in their filenames.
+
+For skill-only use, copy `skills/deadhd` to `~/.agents/skills/deadhd` and invoke `$deadhd`. This does not install hooks: model-written progress and hub entries work, but live status is listed as `No hooks`. Do not combine this with a plugin install.
+
+Sources: [Codex hooks](https://developers.openai.com/codex/hooks), [Plugin packaging](https://developers.openai.com/plugins/build/plugins). Hook integration targets local Codex execution. The IDE extension and cloud execution do not provide the same plugin behavior.
 
 <a id="orca-install"></a>
 
@@ -295,7 +320,7 @@ When a step finishes, the estimate first written for it and the actual duration 
 
 The skill folder and Orca installs carry the status band hooks themselves, so there is nothing to add to `~/.claude/settings.json`. If you added the six hooks below under the old instructions you may delete them, and leaving them in changes nothing you see: `state.py` treats a second copy of the same event as one already applied and passes it by.
 
-A session where no hooks run at all (somewhere that does not load this plugin, such as Codex) shows no status band on the page, and the hub lists it as `No hooks` or `Done`.
+A session where no hooks run (for example, a skill-only Codex install or hooks that have not been trusted) shows no status band on the page, and the hub lists it as `No hooks` or `Done`. For Codex plugin setup, follow [Install in Codex](#install-in-codex).
 
 ```json
 {

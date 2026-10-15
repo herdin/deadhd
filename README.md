@@ -179,7 +179,7 @@ Claude Code 에서 플러그인을 설치합니다.
 
 ## 설치
 
-필요한 것은 [Claude Code](https://code.claude.com) 와 `python3`(표준 라이브러리만 사용)입니다. 세 가지 방법 중 하나만 씁니다.
+[Claude Code](https://code.claude.com) 또는 lifecycle hook 을 지원하는 Codex CLI 와 `python3`(표준 라이브러리만 사용)가 필요합니다. Codex 는 아래 [Codex 에서 설치](#codex-에서-설치)를 따릅니다. Claude Code 는 세 가지 방법 중 하나만 씁니다.
 
 | 방법 | 호출 이름 | 상태 띠 훅 |
 |---|---|---|
@@ -205,6 +205,31 @@ cp -r deadhd/skills/deadhd ~/.claude/skills/
 
 > [!WARNING]
 > 플러그인 설치와 스킬 폴더 설치를 함께 쓰지 마세요. 함께 두면 `deadhd` 플러그인이 두 번 로드되어 같은 명령과 같은 상태 키, 같은 상태 파일을 보는 타이머가 둘이 됩니다.
+
+### Codex 에서 설치
+
+Codex CLI `0.159.2` 기준으로 확인했습니다. 수정된 저장소의 로컬 경로를 등록하고 플러그인을 설치합니다.
+
+```bash
+codex plugin marketplace add /absolute/path/to/deadhd
+codex plugin add deadhd@deadhd
+```
+
+새 Codex 세션을 열고 `/hooks` 에서 deadhd 의 hook 내용을 검토하고 신뢰합니다. 각 작업 세션에서 `$deadhd` 를 실행하면 해당 세션의 진행 페이지가 등록됩니다. `$deadhd hub` 로 등록된 세션들을 한 화면에서 봅니다. 실행 중인 모든 Codex 세션을 자동으로 가져오지는 않습니다.
+
+| 기능 | Codex 지원 |
+|---|---|
+| HTML 진행 페이지·테마·세션 허브 | 지원 |
+| 작업 중·권한 대기·입력 대기·마지막 도구·압축·세션 종료 | 신뢰한 plugin hook 으로 갱신 |
+| 턴 중단 | 입력 대기로 전환 |
+| 터미널 `band`·`statusline`, Claude mod | 미지원. 저장된 설정과 무관하게 HTML 사용 |
+| Claude 의 백그라운드 작업 목록 | Codex hook 에 해당 필드가 없어 미지원 |
+
+`.codex-plugin/plugin.json` 이 `hooks/codex.json` 을 선택하므로 Claude 전용 `Notification` hook 과 TypeScript mod 는 로드하지 않습니다. `render.py` 는 `CODEX_THREAD_ID` 로 상태 파일을 분리합니다(`--session` 이 우선하며, `CLAUDE_CODE_SESSION_ID` 가 있으면 기존 Claude 세션 연결을 유지). 데이터와 HTML 파일도 세션마다 다른 경로를 사용합니다. 스킬 지침은 Codex 에서 세션 ID 를 파일명에 넣도록 안내합니다.
+
+스킬만 쓰려면 `skills/deadhd` 를 `~/.agents/skills/deadhd` 로 복사해 `$deadhd` 를 호출할 수도 있습니다. 이 방식은 hook 을 설치하지 않으므로 모델이 갱신하는 진행 페이지와 허브만 제공하고 실시간 상태는 `훅 없음` 으로 표시합니다. 플러그인 설치와 함께 사용하지 마세요.
+
+근거: [Codex hooks](https://developers.openai.com/codex/hooks), [플러그인 패키징](https://developers.openai.com/plugins/build/plugins). Hook 기반 연동은 로컬 Codex 실행 환경을 대상으로 합니다. IDE 확장·클라우드 실행에서는 동일한 플러그인 동작을 보장하지 않습니다.
 
 <a id="orca-install"></a>
 
@@ -295,7 +320,7 @@ Claude Code 에서 밴드나 상태줄로 보고 있으면 다음 명령도 씁�
 
 스킬 폴더나 Orca 로 설치해도 상태 띠 훅이 함께 읽히므로 `~/.claude/settings.json` 에 직접 넣을 필요가 없습니다. 예전 안내대로 아래 여섯 훅을 넣어 두었다면 지워도 되고, 남겨 두어도 화면에 남는 값은 같습니다. `state.py` 는 같은 이벤트가 연달아 두 번 들어오면 두 번째를 이미 반영한 것으로 보고 넘깁니다.
 
-훅이 아예 돌지 않는 세션(Codex 처럼 이 플러그인을 읽지 않는 곳)은 페이지에 상태 띠가 붙지 않고, 허브에서는 `훅 없음` 또는 `완료` 로 나옵니다.
+훅이 아예 돌지 않는 세션(Codex 에 스킬만 복사했거나 hook 을 신뢰하지 않은 경우 등)은 페이지에 상태 띠가 붙지 않고, 허브에서는 `훅 없음` 또는 `완료` 로 나옵니다. Codex 플러그인 설치는 위 [Codex 에서 설치](#codex-에서-설치)를 따릅니다.
 
 ```json
 {

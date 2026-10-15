@@ -678,7 +678,8 @@ def main(argv):
     if font is None:
         font = config.get_value('font') or 'default'
     if session is None:
-        session = os.environ.get('CLAUDE_CODE_SESSION_ID') or None
+        session = (os.environ.get('CLAUDE_CODE_SESSION_ID')
+                   or os.environ.get('CODEX_THREAD_ID') or None)
     if session is not None and not state.valid_session_id(session):
         die('세션 id 가 올바르지 않다: %r' % session)
     data_path, out_path = rest
@@ -694,6 +695,9 @@ def main(argv):
             stored_view = session_state['view']
     if view is None:
         view = stored_view or config.get_value('view') or DEFAULT_VIEW
+    # Codex 는 Claude Code 의 mod 를 그리지 못하므로 공유 설정과 무관하게 페이지를 쓴다.
+    if os.environ.get('CODEX_THREAD_ID') and not os.environ.get('CLAUDE_CODE_SESSION_ID'):
+        view = 'html'
 
     try:
         with open(data_path, encoding='utf-8') as f:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code 훅의 stdin JSON 을 세션 상태 파일로 옮기고 페이지를 다시 렌더한다."""
+"""Claude Code 와 Codex 훅의 stdin JSON 을 세션 상태 파일로 옮기고 페이지를 다시 렌더한다."""
 import hashlib
 import json
 import os
@@ -200,6 +200,15 @@ def apply_event(state, payload):
     """이벤트를 상태에 반영한다. 무시할 이벤트면 None, 아니면 (렌더 건너뜀, 추가 컨텍스트)."""
     event = payload.get('hook_event_name')
     now = now_iso()
+    if event == 'PermissionRequest':
+        state['status'] = 'waiting_permission'
+        state['since'] = now
+        tool_input = payload.get('tool_input')
+        message = tool_input.get('description') if isinstance(tool_input, dict) else None
+        if not isinstance(message, str):
+            message = payload.get('tool_name')
+        state['message'] = message if isinstance(message, str) else None
+        return (False, None)
     if event == 'Notification':
         kind = payload.get('notification_type')
         if kind == 'permission_prompt':
@@ -220,20 +229,23 @@ def apply_event(state, payload):
         state['since'] = now
         state['message'] = None
         return (False, None)
-    if event == 'PostToolUse':
-        name = payload.get('tool_name')
-        duration = payload.get('duration_ms')
-        state['lastTool'] = {
-            'name': name if isinstance(name, str) else '',
-            'at': now,
-            'durationMs': int(duration) if isinstance(duration, (int, float))
-            and not isinstance(duration, bool) else None,
-        }
-        if state.get('status') != 'working':
+    if event in ('PreToolUse', 'PostToolUse'):
+        working = state.get('status') == 'working'
+        if event == 'PostToolUse':
+            name = payload.get('tool_name')
+            duration = payload.get('duration_ms')
+            state['lastTool'] = {
+                'name': name if isinstance(name, str) else '',
+                'at': now,
+                'durationMs': int(duration) if isinstance(duration, (int, float))
+                and not isinstance(duration, bool) else None,
+            }
+        if not working:
             state['status'] = 'working'
             state['since'] = now
-        return (True, None)
-    if event == 'Stop':
+        state['message'] = None
+        return (working, None)
+    if event in ('Stop', 'Interrupt'):
         state['status'] = 'idle'
         state['since'] = now
         state['message'] = None

@@ -1,0 +1,11 @@
+{
+  "name": "deadhd",
+  "version": "1.13.1",
+  "description": "Show live progress pages and a multi-session hub for Codex.",
+  "author": {"name": "lcalmsky", "url": "https://github.com/lcalmsky"},
+  "homepage": "https://github.com/lcalmsky/deadhd",
+  "repository": "https://github.com/lcalmsky/deadhd",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json"
+}

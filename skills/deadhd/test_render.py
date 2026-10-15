@@ -48,7 +48,8 @@ def run_render(data_path, out_path, theme=None, config_path=None, env_extra=None
     env = dict(os.environ)
     env['DEADHD_CONFIG'] = config_path if config_path is not None else MISSING_CONFIG
     # 세션·이력·상태가 이 테스트를 실행한 세션에서 새어 들어오지 않게 한다.
-    for key in ('XDG_CONFIG_HOME', 'CLAUDE_CODE_SESSION_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
+    for key in ('XDG_CONFIG_HOME', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID',
+                'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
         env.pop(key, None)
     env['DEADHD_HUB'] = TEST_HUB
     if env_extra:
@@ -70,6 +71,7 @@ def run_state(payload, state_dir, env_extra=None, raw=None):
     env = dict(os.environ)
     env['DEADHD_CONFIG'] = MISSING_CONFIG
     env.pop('XDG_CONFIG_HOME', None)
+    env.pop('CODEX_THREAD_ID', None)
     env['DEADHD_STATE_DIR'] = state_dir
     env['DEADHD_HUB'] = TEST_HUB
     if env_extra:
@@ -1584,7 +1586,7 @@ class RenderTest(unittest.TestCase):
             shutil.copy(os.path.join(HERE, name), skill)
         env = dict(os.environ)
         env.pop('PYTHONDONTWRITEBYTECODE', None)
-        for key in ('CLAUDE_CODE_SESSION_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
+        for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
             env.pop(key, None)
         env['DEADHD_CONFIG'] = MISSING_CONFIG
         env['DEADHD_HUB'] = os.path.join(self.tmp, 'hub.html')
@@ -1600,7 +1602,7 @@ class RenderTest(unittest.TestCase):
                      'template.html', 'hub.html', 'themes.css'):
             shutil.copy(os.path.join(HERE, name), skill)
         env = dict(os.environ)
-        for key in ('CLAUDE_CODE_SESSION_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
+        for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
             env.pop(key, None)
         env['DEADHD_CONFIG'] = MISSING_CONFIG
         hub = os.path.join(self.tmp, 'hub.html')
@@ -1911,7 +1913,8 @@ class RenderFontTest(unittest.TestCase):
     def run_render(self, argv, config_path=None):
         env = dict(os.environ)
         env['DEADHD_CONFIG'] = config_path if config_path is not None else MISSING_CONFIG
-        for key in ('XDG_CONFIG_HOME', 'CLAUDE_CODE_SESSION_ID', 'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
+        for key in ('XDG_CONFIG_HOME', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID',
+                    'DEADHD_STATE_DIR', 'DEADHD_HISTORY'):
             env.pop(key, None)
         env['DEADHD_HUB'] = TEST_HUB
         return subprocess.run([sys.executable, RENDER, *argv], capture_output=True, text=True, env=env)
@@ -2994,6 +2997,42 @@ class StateScriptTest(unittest.TestCase):
         self.assertEqual(state['status'], 'idle')
         self.assertIsNone(state['message'])
 
+    def test_codex_permission_request_is_observational_and_tool_use_resumes(self):
+        self.render_session()
+        cases = (({'description': 'Run the build'}, 'Bash', 'Run the build'),
+                 ({'command': 'make'}, 'Bash', 'Bash'), (None, 'Bash', 'Bash'),
+                 ({'description': 7}, 'Bash', 'Bash'), (None, None, None))
+        for tool_input, tool_name, expected in cases:
+            with self.subTest(tool_input=tool_input, tool_name=tool_name):
+                r = self.event({'hook_event_name': 'PermissionRequest', 'tool_name': tool_name,
+                                'tool_input': tool_input})
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(r.stdout, '')
+                self.assertEqual(self.read_state()['status'], 'waiting_permission')
+                self.assertEqual(self.read_state()['message'], expected)
+                self.assertEqual(self.out_payload()['live']['status'], 'waiting_permission')
+                self.event({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash'})
+                self.assertEqual(self.read_state()['status'], 'working')
+                self.assertIsNone(self.read_state()['message'])
+                self.assertEqual(self.out_payload()['live']['status'], 'working')
+
+    def test_codex_post_tool_use_clears_permission_wait(self):
+        self.render_session()
+        self.event({'hook_event_name': 'PermissionRequest', 'tool_name': 'Bash'})
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash'})
+        self.assertEqual(self.out_payload()['live']['status'], 'working')
+        self.assertIsNone(self.read_state()['message'])
+
+    def test_codex_interrupt_returns_to_idle_without_stopping_the_session(self):
+        self.render_session()
+        self.event({'hook_event_name': 'UserPromptSubmit', 'prompt': 'work'})
+        r = self.event({'hook_event_name': 'Interrupt', 'turn_id': 'turn-1'})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, '')
+        self.assertEqual(self.out_payload()['live']['status'], 'idle')
+        self.event({'hook_event_name': 'UserPromptSubmit', 'prompt': 'continue'})
+        self.assertEqual(self.read_state()['status'], 'working')
+
     def test_post_tool_use_updates_state_but_skips_recent_render(self):
         self.render_session()
         first = self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash',
@@ -3637,6 +3676,37 @@ class RenderSessionTest(unittest.TestCase):
             self.assertEqual(json.load(f)['sessionId'], 'env-1')
         self.assertEqual(self.payload()['live']['status'], 'working')
 
+    def test_codex_sessions_have_separate_hub_entries_and_hook_state(self):
+        for session in ('codex-1', 'codex-2'):
+            self.out = os.path.join(self.tmp, session + '.html')
+            r = self.render(env_extra={'CODEX_THREAD_ID': session})
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(self.read_state(session)['out'], self.out)
+        r = run_state({'session_id': 'codex-1', 'hook_event_name': 'Stop'}, self.state_dir)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_state('codex-1')['status'], 'idle')
+        self.assertEqual(self.read_state('codex-2')['status'], 'working')
+        with open(TEST_HUB, encoding='utf-8') as f:
+            sessions = parse_block(hub_data_block(f.read()))['sessions']
+        self.assertEqual({s['sessionId'] for s in sessions}, {'codex-1', 'codex-2'})
+
+    def test_codex_uses_html_despite_shared_claude_view_preferences(self):
+        path = os.path.join(self.tmp, 'config.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'view': 'band'}, f)
+        self.seed_state('codex-1', view='statusline')
+        r = self.render(env_extra={'CODEX_THREAD_ID': 'codex-1', 'DEADHD_CONFIG': path})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.exists(self.out))
+        self.assertEqual(self.read_state('codex-1')['view'], 'html')
+        self.assertEqual(self.payload()['live']['status'], 'working')
+
+    def test_explicit_session_overrides_codex_environment(self):
+        r = self.render(session='explicit', env_extra={'CODEX_THREAD_ID': 'codex-1'})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_state('explicit')['sessionId'], 'explicit')
+        self.assertFalse(os.path.exists(os.path.join(self.state_dir, 'codex-1.json')))
+
     def test_unhooked_render_has_no_live_band(self):
         self.assertEqual(self.render(session='abc').returncode, 0)
         self.assertNotIn('live', self.payload())
@@ -3752,6 +3822,7 @@ class RenderSessionTest(unittest.TestCase):
         cases = (
             {'session': '../esc'},
             {'env_extra': {'CLAUDE_CODE_SESSION_ID': '../esc'}},
+            {'env_extra': {'CODEX_THREAD_ID': '../esc'}},
         )
         for kwargs in cases:
             with self.subTest(kwargs=kwargs):
@@ -4268,6 +4339,25 @@ STATE_HOOKS = {
 
 
 class HooksJsonTest(unittest.TestCase):
+    def test_codex_manifest_selects_command_hooks_without_claude_modules(self):
+        root = os.path.dirname(os.path.dirname(HERE))
+        with open(os.path.join(root, '.codex-plugin', 'plugin.json'), encoding='utf-8') as f:
+            manifest = json.load(f)
+        self.assertTrue(os.path.exists(os.path.join(root, manifest['skills'], 'deadhd', 'SKILL.md')))
+        with open(os.path.join(root, manifest['hooks']), encoding='utf-8') as f:
+            config = json.load(f)
+        self.assertNotIn('modules', config)
+        self.assertEqual(set(config['hooks']), {'UserPromptSubmit', 'PreToolUse', 'PermissionRequest',
+                                               'PostToolUse', 'Stop', 'Interrupt', 'SessionStart', 'SessionEnd'})
+        for event, groups in config['hooks'].items():
+            for group in groups:
+                self.assertEqual(group.get('matcher'), 'compact' if event == 'SessionStart' else None)
+                for hook in group['hooks']:
+                    command = hook['command'].replace('${PLUGIN_ROOT}', root)
+                    self.assertEqual(shlex.split(command), ['python3', STATE])
+                    if event in ('Interrupt', 'SessionEnd'):
+                        self.assertLessEqual(hook['timeout'], 3)
+
     def hooks_of(self, root):
         with open(os.path.join(root, 'hooks', 'hooks.json'), encoding='utf-8') as f:
             return json.load(f)['hooks']

@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "PermissionRequest": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "Interrupt": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\"", "timeout": 3}]}],
+    "SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\""}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/skills/deadhd/state.py\"", "timeout": 3}]}]
+  }
+}
