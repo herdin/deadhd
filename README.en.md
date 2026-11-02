@@ -191,7 +191,7 @@ A preset bundles the family, weight, and letter spacing, and the default `defaul
 - **Current step** shows the step name and `~N min left`
 - **Steps** clicking the step line expands the previous, current, and next steps inside the row. On the selected row, `→` expands and pressing it again shows all steps, while `←` collapses them one at a time
 - **Progress page** the document button opens the deadhd progress page in a browser. If it cannot be opened, a short failure notice appears at the bottom of the popover and panel
-- **Activity** an activity line such as `1 compaction · 2 in background · Bash 12 seconds ago`
+- **Activity** an activity line such as `1 compaction · 2 shells · Bash 12 seconds ago`
 
 A session whose turn ended before its checklist was finished keeps a step line on its done row. Pulse raises a card under the menu bar when a session waits for you or finishes, and clicking a row jumps to that session's Orca terminal or its herdr or tmux pane. deadhd works fully without it; Pulse only adds the menu bar as one more place to look. Install it with Homebrew.
 
