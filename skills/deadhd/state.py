@@ -24,6 +24,10 @@ QUOTE = re.compile(r'^>\s*')
 BULLET = re.compile(r'^(?:[-*+]\s+|\d+[.)]\s+)')
 MD_LINK = re.compile(r'\[([^\]]*)\]\([^)]*\)')
 SPACES = re.compile(r'\s+')
+TASK_NOTIFICATION = re.compile(r'<task-notification>(.*?)(?:</task-notification>|\Z)', re.S)
+TASK_ID = re.compile(r'<task-id>(.*?)</task-id>')
+TRANSCRIPT_TAIL_BYTES = 256 * 1024
+TOOL_TASK_TYPES = {'Bash': 'shell', 'Agent': 'agent', 'Task': 'agent', 'Monitor': 'monitor'}
 
 
 def state_dir():
@@ -120,11 +124,101 @@ def background_tasks(payload):
     for task in raw:
         if not isinstance(task, dict):
             continue
-        kept.append({
+        item = {
             'type': task.get('type') if isinstance(task.get('type'), str) else '',
             'description': task.get('description') if isinstance(task.get('description'), str) else '',
-        })
+        }
+        if isinstance(task.get('id'), str):
+            item['id'] = task['id']
+        kept.append(item)
     return kept
+
+
+def completed_task_ids(transcript_path):
+    """트랜스크립트 끝부분의 완료 알림에 나온 작업 id."""
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return set()
+    try:
+        with open(transcript_path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - TRANSCRIPT_TAIL_BYTES))
+            text = f.read().decode('utf-8', errors='replace')
+    except (OSError, ValueError):
+        return set()
+    done = set()
+    for block in TASK_NOTIFICATION.finditer(text):
+        body = block.group(1)
+        # 모니터 이벤트처럼 status 가 없는 중간 알림은 완료가 아니다.
+        if '<status>' not in body:
+            continue
+        done.update(match.group(1) for match in TASK_ID.finditer(body))
+    return done
+
+
+def drop_completed_tasks(state, transcript_path):
+    tasks = state.get('backgroundTasks')
+    if not isinstance(tasks, list):
+        return
+    if not any(isinstance(task, dict) and isinstance(task.get('id'), str) for task in tasks):
+        return
+    done = completed_task_ids(transcript_path)
+    if not done:
+        return
+    state['backgroundTasks'] = [
+        task for task in tasks
+        if not (isinstance(task, dict) and isinstance(task.get('id'), str)
+                and task['id'] in done)
+    ]
+
+
+def new_task(payload):
+    """도구 결과가 알려 주는 새 백그라운드 작업."""
+    response = payload.get('tool_response')
+    if not isinstance(response, dict):
+        return None
+    name = payload.get('tool_name')
+    task_id = response.get('backgroundTaskId')
+    if not isinstance(task_id, str) and response.get('isAsync') is True:
+        task_id = response.get('agentId')
+    if not isinstance(task_id, str) and name == 'Monitor':
+        task_id = response.get('taskId')
+    if not isinstance(task_id, str):
+        return None
+    tool_input = payload.get('tool_input')
+    description = tool_input.get('description') if isinstance(tool_input, dict) else None
+    kind = TOOL_TASK_TYPES.get(name, name.lower()) if isinstance(name, str) else ''
+    return {
+        'id': task_id,
+        'type': kind,
+        'description': description if isinstance(description, str) else '',
+    }
+
+
+def add_task(state, task):
+    tasks = state.get('backgroundTasks')
+    if not isinstance(tasks, list):
+        tasks = []
+    if any(isinstance(item, dict) and item.get('id') == task['id'] for item in tasks):
+        return
+    state['backgroundTasks'] = tasks + [task]
+
+
+def stop_task_id(payload):
+    for key in ('tool_input', 'tool_response'):
+        source = payload.get(key)
+        if isinstance(source, dict) and isinstance(source.get('task_id'), str):
+            return source['task_id']
+    return None
+
+
+def remove_task(state, task_id):
+    tasks = state.get('backgroundTasks')
+    if not isinstance(tasks, list):
+        return
+    state['backgroundTasks'] = [
+        task for task in tasks
+        if not (isinstance(task, dict) and task.get('id') == task_id)
+    ]
 
 
 def parse_stamp(value):
@@ -274,6 +368,7 @@ def apply_event(state, payload):
         state['message'] = None
         # pop 으로 지운다. 이 키가 없던 상태 파일에 새 키를 만들지 않기 위해서다.
         state.pop('replyTail', None)
+        drop_completed_tasks(state, payload.get('transcript_path'))
         return (False, None)
     if event == 'PostToolUse':
         name = payload.get('tool_name')
@@ -289,6 +384,14 @@ def apply_event(state, payload):
             state['since'] = now
         # 다시 도구를 쓰기 시작한 세션은 지난 응답을 기다리는 게 아니다.
         state.pop('replyTail', None)
+        task = new_task(payload)
+        if task is not None:
+            add_task(state, task)
+        if name == 'TaskStop':
+            stopped = stop_task_id(payload)
+            if stopped is not None:
+                remove_task(state, stopped)
+        drop_completed_tasks(state, payload.get('transcript_path'))
         return (True, None)
     if event == 'Stop':
         state['status'] = 'idle'

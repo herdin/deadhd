@@ -3284,13 +3284,103 @@ class StateScriptTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         state = self.read_state()
         self.assertEqual(state['status'], 'idle')
-        self.assertEqual(state['backgroundTasks'], [{'type': 'shell', 'description': 'pytest -q'}])
+        self.assertEqual(state['backgroundTasks'],
+                         [{'type': 'shell', 'description': 'pytest -q', 'id': 't1'}])
 
     def test_stop_without_tasks_clears_them(self):
         self.render_session()
         self.event({'hook_event_name': 'Stop',
                     'background_tasks': [{'type': 'shell', 'description': 'x'}]})
         self.event({'hook_event_name': 'Stop'})
+        self.assertEqual(self.read_state()['backgroundTasks'], [])
+
+    def test_post_tool_use_adds_a_background_task(self):
+        self.render_session()
+        r = self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash',
+                        'tool_input': {'description': 'nightly'},
+                        'tool_response': {'backgroundTaskId': 'b1'}})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_state()['backgroundTasks'],
+                         [{'id': 'b1', 'type': 'shell', 'description': 'nightly'}])
+
+    def test_the_same_task_id_is_added_once(self):
+        self.render_session()
+        for description in ('first', 'second'):
+            self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash',
+                        'tool_input': {'description': description},
+                        'tool_response': {'backgroundTaskId': 'b1'}})
+        self.assertEqual(len(self.read_state()['backgroundTasks']), 1)
+
+    def test_async_agent_and_monitor_results_add_tasks(self):
+        self.render_session()
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Agent',
+                    'tool_input': {'description': 'research'},
+                    'tool_response': {'isAsync': True, 'agentId': 'a1'}})
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Monitor',
+                    'tool_response': {'taskId': 'm1'}})
+        self.assertEqual(self.read_state()['backgroundTasks'], [
+            {'id': 'a1', 'type': 'agent', 'description': 'research'},
+            {'id': 'm1', 'type': 'monitor', 'description': ''},
+        ])
+
+    def write_transcript(self, *blocks):
+        path = os.path.join(self.tmp, 'transcript.jsonl')
+        with open(path, 'w', encoding='utf-8') as f:
+            for block in blocks:
+                f.write(json.dumps({'type': 'user', 'text': block}, ensure_ascii=False) + '\n')
+        return path
+
+    def seed_task(self):
+        self.render_session()
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash',
+                    'tool_response': {'backgroundTaskId': 't1'}})
+
+    def test_completed_notification_drops_the_task(self):
+        self.seed_task()
+        transcript = self.write_transcript(
+            '<task-notification>\n<task-id>t1</task-id>\n<status>completed</status>\n'
+            '</task-notification>')
+        r = self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Read',
+                        'tool_response': {}, 'transcript_path': transcript})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_state()['backgroundTasks'], [])
+
+    def test_a_notification_without_status_keeps_the_task(self):
+        self.seed_task()
+        transcript = self.write_transcript(
+            '<task-notification>\n<task-id>t1</task-id>\n<event>monitor</event>\n'
+            '</task-notification>')
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Read',
+                    'tool_response': {}, 'transcript_path': transcript})
+        self.assertEqual(self.read_state()['backgroundTasks'][0]['id'], 't1')
+
+    def test_task_stop_removes_the_task(self):
+        self.seed_task()
+        r = self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'TaskStop',
+                        'tool_input': {'task_id': 't1'}, 'tool_response': {}})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_state()['backgroundTasks'], [])
+
+    def test_tasks_without_an_id_are_not_dropped(self):
+        self.render_session()
+        self.event({'hook_event_name': 'Stop',
+                    'background_tasks': [{'type': 'shell', 'description': 'x'}]})
+        transcript = self.write_transcript(
+            '<task-notification>\n<task-id>t1</task-id>\n<status>completed</status>\n'
+            '</task-notification>')
+        self.event({'hook_event_name': 'PostToolUse', 'tool_name': 'Read',
+                    'tool_response': {}, 'transcript_path': transcript})
+        self.assertEqual(self.read_state()['backgroundTasks'],
+                         [{'type': 'shell', 'description': 'x'}])
+
+    def test_a_new_prompt_drops_completed_tasks(self):
+        self.seed_task()
+        transcript = self.write_transcript(
+            '<task-notification>\n<task-id>t1</task-id>\n<status>completed</status>\n'
+            '</task-notification>')
+        r = self.event({'hook_event_name': 'UserPromptSubmit', 'prompt': 'next',
+                        'transcript_path': transcript})
+        self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.read_state()['backgroundTasks'], [])
 
     def test_stop_keeps_the_tail_of_the_last_reply(self):
